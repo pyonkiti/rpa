@@ -14,6 +14,9 @@ require 'yaml'
 class SESSIONS
     class << self
 
+        attr_reader :syori_cnt
+        attr_writer :syori_cnt
+
         # 引数チェック
         def check_init(argv)
             
@@ -27,8 +30,9 @@ class SESSIONS
                     case argv[0].to_s
                         # ヘルプ
                         when "h", "-h"
-                            msg  = "  a [-a]    Access連携出力（請求/施設）をCSVする処理を実行します \n"
-                            msg  = "  s [-s]    Access連携出力（請求）をCSVする処理を実行します \n"
+                            msg  = "\n"
+                            msg << "  a [-a]    Access連携出力（請求/施設）をCSVする処理を実行します \n"
+                            msg << "  s [-s]    Access連携出力（請求）をCSVする処理を実行します \n"
                             msg << "  k [-k]    管理部提出データ1～3をCSV出力する処理を実行します \n"
                             msg << "  l [-l]    ログインだけをおこないます \n"
                             msg << "  h [-h]    ヘルプを表示します"
@@ -61,43 +65,33 @@ class SESSIONS
         def proc_init
             begin
                 FileUtils.rm("./production.log", force: true)               # Logファイルの削除
-                $has_local = YAML.load_file("./local.yaml")                 # YAMLファイル読み込み
                 $logger = Logger.new('production.log')                      # Logの設定
                 $logger.info("処理を開始しました。")
-
+                $has_local = YAML.load_file("./local.yaml")                 # YAMLファイル読み込み
                 return nil
             rescue => ex
-                msg = "method - " + __method__.to_s + " : " + ex.message + ": YAMLファイルの読み込みに失敗しました。"
-                $logger.error("#{msg}")
-                return msg
+                return "method - " + __method__.to_s + " : " + ex.message + ": YAMLファイルの読み込みに失敗しました。"
             end
         end
 
         # 終了処理
-        def proc_end(driver, ret, cat)
+        def proc_end(driver, cat)
             
             if cat.nil?
                 $logger.info("処理が正常終了しました。")
-            elsif cat.is_a?(Array)
-                case cat[1]
-                    when nil
-                        $logger.error("#{ret}")
-                        $logger.error("処理が異常終了しました。")
-                    when "chk"
-                        $logger.error("#{ret}")
-                    else
-                        $logger.error("不明なエラーです。")
-                end
-                driver.quit
             else
-                $logger.error("不明なエラーです。")
+                $logger.error("#{cat}")
+                $logger.info("処理が異常終了しました。")
+                driver.quit if !driver.nil?
             end
             $logger.close
         end
 
         # ログイン処理
         def proc_main(driver)
-
+            
+            @syori_cnt = 1
+            
             begin
                 wait = Selenium::WebDriver::Wait.new(timeout: 2)
                 driver.navigate.to 'https://hncapitol.rakurakuhanbai.jp/wfecn6a/'
@@ -114,13 +108,16 @@ class SESSIONS
                 # ログインボタン
                 driver.find_element(id: 'jq-loginSubmit').click
                 sleep(0.3)
+                
+                # ログイン判断
+                if driver.find_elements(class: 'fw-keyword').size >= 1
+                    return "ログインID、または、パスワードに誤りがあります。"
+                end
 
-                $logger.info("ログインができました。")
+                $logger.info("#{@syori_cnt.to_s.rjust(2)} ログインができました。")
                 return nil
             rescue => ex
-                msg = "method - " + __method__.to_s + " : " + ex.message + ": 「ログイン処理」でエラーが発生しました。"
-                $logger.error("#{msg}")
-                return msg
+                return "method - " + __method__.to_s + " : " + ex.message + ": 「ログイン処理」でエラーが発生しました。"
             end
         end
     end
@@ -130,6 +127,7 @@ end
 class RAKURAKU
     class << self
         attr_reader :csv_arry
+        attr_writer :csv_arry
 
         # 請求処理
         def proc_main(driver)
@@ -146,12 +144,11 @@ class RAKURAKU
                 driver.manage.window.resize_to(1200, 800)
                 sleep(0.3)
 
-                $logger.info("請求処理が選択されました。")
+                SESSIONS::syori_cnt += 1
+                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} 請求処理が選択されました。")
                 return nil
             rescue => ex
-                msg = "method - " + __method__.to_s + " : " + ex.message + ": 「請求処理」でエラーが発生しました。"
-                $logger.error("#{msg}")
-                return msg
+                return "method - " + __method__.to_s + " : " + ex.message + ": 「請求処理」でエラーが発生しました。"
             end
         end
 
@@ -163,24 +160,23 @@ class RAKURAKU
                         # 請求テーブルをクリック
                         driver.find_element(id: "nav-db-101164").click
                         sleep(0.3)
-                        $logger.info("請求テーブルが選択されました。")
+                        msg = "請求テーブルが選択されました。"
                     when "sisetu"
                         # 施設テーブルをクリック
                         driver.find_element(id: "nav-db-101163").click
                         sleep(0.3)
-                        $logger.info("施設テーブルが選択されました。")
+                        msg = "施設テーブルが選択されました。"
                     else
                         raise
                 end
                 
+                SESSIONS::syori_cnt += 1
+                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} #{msg}")
                 return nil
             rescue => ex
-                msg = "method - " + __method__.to_s + " : " + ex.message + ": 「請求処理のテーブルの選択」でエラーが発生しました。"
-                $logger.error("#{msg}")
-                return msg
+                return "method - " + __method__.to_s + " : " + ex.message + ": 「請求処理のテーブルの選択」でエラーが発生しました。"
             end
         end
-
 
         # 請求処理－各テーブル－各メニュー
         def proc_syori(driver, tbl_id, syori_kbn)
@@ -209,6 +205,9 @@ class RAKURAKU
                     driver.find_element(xpath: "#{res[:xpath]}").click
                     sleep(0.3)
                     
+                    SESSIONS::syori_cnt += 1
+                    $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} #{res[:menu]}が選択されました。")
+
                     # メイン画面に戻る
                     driver.switch_to.default_content
                     sleep(0.3)
@@ -230,13 +229,13 @@ class RAKURAKU
                     sleep(0.5)
 
                     # ダウンロード
-                    # データ件数が多くなればダウンロード時間が長くなるため、sleepは都度、メンテする必要がある
+                    # データ件数が多くなってダウンロード時間が長くなれば、sleepは長くすること
                     driver.find_element(id: "csv_confirm_start").click
-                    sleep(4)
+                    sleep(4.5)
 
                     # ダウンロードファイル
                     driver.find_element(id: "csv_complete_link").click
-                    sleep(3)
+                    sleep(2.5)
 
                     # ダウンロードするCSVファイル名を取得
                     @csv_arry << driver.find_element(id: "csv_complete_link").text
@@ -245,7 +244,8 @@ class RAKURAKU
                     driver.find_element(id: "csv_complete_close").click
                     sleep(0.5)
 
-                    $logger.info("「#{@csv_arry[-1]}」がダウンロードできました。")
+                    SESSIONS::syori_cnt += 1
+                    $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} 「#{@csv_arry[-1]}」がダウンロードできました。")
 
                     # メイン画面に戻る
                     driver.switch_to.default_content
@@ -258,9 +258,7 @@ class RAKURAKU
                 
                 return nil
             rescue => ex
-                msg = "method - " + __method__.to_s + " : " + ex.message + ": 「請求処理」でエラーが発生しました。"
-                $logger.error("#{msg}")
-                return msg
+                return "method - " + __method__.to_s + " : " + ex.message + ": 「請求処理－各テーブル－各メニュー」でエラーが発生しました。"
             end
         end
     end
@@ -305,55 +303,56 @@ end
 ret, syori_kbn, driver = nil, nil, nil
 
 cat = catch(:goto_err) do
+    
+    # 初期処理
+    ret = SESSIONS.proc_init
+    throw :goto_err, ret if !ret.nil?
 
     # 引数の入力チェック
     ret = SESSIONS.check_init(ARGV)
-    throw :goto_err, [ret, "chk"] if !(ret.length == 1)
+    throw :goto_err, ret if !(ret.length == 1)
     syori_kbn = ret
 
     # 起動ブラウザの設定
     options = Selenium::WebDriver::Chrome::Options.new
     options.detach = true
+    options.add_argument('--log-level=1')
     driver = Selenium::WebDriver.for :chrome, options: options
-
-    # 初期処理
-    ret = SESSIONS.proc_init
-    throw :goto_err, [ret, nil] if !ret.nil?
 
     # ログイン処理
     ret = SESSIONS.proc_main(driver)
-    throw :goto_err, [ret, nil] if !ret.nil?
-    
+    throw :goto_err, ret if !ret.nil?
+        
     # 請求処理
     if ( syori_kbn == "a" or syori_kbn == "s" or syori_kbn == "k" )
         ret = RAKURAKU.proc_main(driver)
-        throw :goto_err, [ret, nil] if !ret.nil?
+        throw :goto_err, ret if !ret.nil?
     end
 
     # 処理ルーティン
     syori_arry = [{tbl_nm: "請求", tbl_id: "seikyu", syori_kbn: ["a", "s"]}, 
                   {tbl_nm: "施設", tbl_id: "sisetu", syori_kbn: ["a", "k"]}
                  ]
-
+        
     syori_arry.each do |res|
 
         if res[:syori_kbn].include?(syori_kbn)
             
             # 請求処理－各テーブル
             ret = RAKURAKU.proc_table(driver, res[:tbl_id])
-            throw :goto_err, [ret, nil] if !ret.nil?
+            throw :goto_err, ret if !ret.nil?
             
             # 請求処理－各テーブル－各メニュー
             ret = RAKURAKU.proc_syori(driver, res[:tbl_id], syori_kbn)
-            throw :goto_err, [ret, nil] if !ret.nil?
-
+            throw :goto_err, ret if !ret.nil?
+            
             # CSVファイルのリネーム
             ret = CSVFILES.change_csv
-            throw :goto_err, [ret, nil] if !ret.nil?
+            throw :goto_err, ret if !ret.nil?
         end
     end
     throw :goto_err, nil
 end
 
 # 終了処理
-SESSIONS.proc_end(driver, ret, cat)
+SESSIONS.proc_end(driver, cat)
