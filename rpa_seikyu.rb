@@ -1,10 +1,8 @@
 # 開発環境での動作の仕方
-# WindowsでPowerShellを起動
+# WindowsでPowerShellを起動（Virual BoxのUbuntu環境では動作しない）
 # D:\vagrant\rpaに移動
-# ruby rpa_seikyu.rb u Sofinet Cloudの連携（ユーザー）
-# ruby rpa_seikyu.rb s Sofinet Cloudの連携（ユーザー/施設）
-# ruby rpa_seikyu.rb n 楽楽のCSVインポートのインポート（入金仕入出力）
-# ruby rpa_seikyu.rb c 請求月計算
+# ruby rpa_seikyu.rb 引数    - 請求システムのRPA
+# ruby rpa_rakuraku.rb 引数  - 楽楽販売のRPA
 
 require 'selenium-webdriver'
 require 'logger'
@@ -35,6 +33,7 @@ class SESSIONS
                             msg << "  s [-s]    Sofinet Cloudの連携（ユーザー/施設） \n"
                             msg << "  n [-n]    楽楽のCSVインポートのインポート（入金仕入出力） \n"
                             msg << "  c [-c]    請求月計算 \n"
+                            msg << "  a [-a]    斡旋手数料の請求書 \n"
                             msg << "  h [-h]    ヘルプを表示します"
                         # Sofinet Cloudの連携（ユーザー）
                         when "u", "-u"
@@ -47,6 +46,9 @@ class SESSIONS
                             msg = argv[0][-1].to_s
                         # 請求月計算
                         when "c", "-c"
+                            msg = argv[0][-1].to_s
+                        # 斡旋手数料の請求書
+                        when "a", "-a"
                             msg = argv[0][-1].to_s
                         else
                             msg = "引数が正しく指定されていません。"
@@ -61,12 +63,12 @@ class SESSIONS
             end
         end
 
-        # 初期 処理
-        def proc_init
+        # 初期処理
+        def proc_init(argv)
             begin
                 FileUtils.rm("./production.log", force: true)               # Logファイルの削除
                 $logger = Logger.new('production.log')                      # Logの設定
-                $logger.info("処理を開始しました。")
+                $logger.info("処理を開始しました。 引数: #{argv[0]}")
                 $has_local = YAML.load_file("./local.yaml")                 # YAMLファイル読み込み
                 return nil
             rescue => ex
@@ -288,9 +290,15 @@ class RAKUREN_NYUSHI
                     driver.find_element(id: "tag_nyushi_file#{cnt+1}").send_keys csv_file
                     sleep(2.0)
 
-                    # インポート１～３ 《メモ》 インポート1～3 26秒 22秒 18秒
-                    driver.find_element(id: "tag_nyushi_submit#{cnt+1}").click
-                    sleep(30)
+                    begin
+                        # インポート１～３ 《メモ》 インポート1～3 26秒 22秒 18秒
+                        driver.find_element(id: "tag_nyushi_submit#{cnt+1}").click
+                        sleep(25)
+                    rescue => ex
+                        if ex.class.to_s == "Net::ReadTimeout"
+                            $logger.warn("楽楽のCSVインポートでタイムアウトが発生しました。")
+                        end
+                    end
 
                     SESSIONS::syori_cnt += 1
                     $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} インポート#{cnt+1}をクリックしました。")
@@ -394,6 +402,50 @@ class RAKUREN_SEIKYU
     end
 end
 
+# -----------------------------------------------------------------------------
+
+# 斡旋手数料の請求書
+class RAKUREN_ASSENT
+    class << self
+        def proc_main(driver)
+            begin
+
+                # 幅を大きくする
+                driver.manage.window.resize_to(1200, 1020)
+
+                # 斡旋手数料メニューを選択
+                driver.find_element(xpath: "/html/body/div[1]/ul[1]/li[4]/a").click
+                sleep(1.0)
+                
+                SESSIONS::syori_cnt += 1
+                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} 斡旋手数料メニューを選択しました。")
+
+                # 実行
+                # 《メモ》 実行時間 8秒
+                driver.find_element(id: "btn_jikko").click
+                sleep(10.0)
+
+                SESSIONS::syori_cnt += 1
+                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} 実行をクリックしました。")
+
+                # Excel出力
+                driver.find_element(id: "lnk_seikyus_excel").click
+                sleep(3.0)
+
+                SESSIONS::syori_cnt += 1
+                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} Excel出力をクリックしました。")
+
+                # 画面を再読み込み
+                driver.navigate.refresh
+
+                return nil
+            rescue => ex
+                return "method - " + __method__.to_s + " : " + ex.message + ": 「斡旋手数料の請求書」でエラーが発生しました。"
+            end
+        end
+    end
+end
+
 # ------------------------------------------------------------------------------
 # メイン処理
 # ------------------------------------------------------------------------------
@@ -403,7 +455,7 @@ driver, ret = nil, nil
 cat = catch(:goto_err) do
     
     # 初期処理
-    ret = SESSIONS.proc_init
+    ret = SESSIONS.proc_init(ARGV)
     throw :goto_err, ret if !ret.nil?
     
     # 引数の入力チェック
@@ -417,7 +469,7 @@ cat = catch(:goto_err) do
     options.add_argument('--log-level=1')
 
     driver = Selenium::WebDriver.for :chrome, options: options
-    
+
     # ログイン処理
     ret = SESSIONS.proc_main(driver)
     throw :goto_err, ret if !ret.nil?
@@ -429,7 +481,7 @@ cat = catch(:goto_err) do
     end
     
     # 楽楽のCSVインポート
-    if ( syori_kbn == "n" or syori_kbn == "c" )
+    if ( syori_kbn == "n" or syori_kbn == "c" or syori_kbn == "a")
         ret = RAKUREN_NYUSHI.proc_main(driver)
         throw :goto_err, ret if !ret.nil?
     end
@@ -444,6 +496,12 @@ cat = catch(:goto_err) do
     if syori_kbn == "c"
          ret = RAKUREN_SEIKYU.proc_main(driver)
          throw :goto_err, ret if !ret.nil?
+    end
+    
+    # 斡旋手数料の請求書
+    if syori_kbn == "a"
+        ret = RAKUREN_ASSENT.proc_main(driver)
+        throw :goto_err, ret if !ret.nil?
     end
     throw :goto_err, nil
 end

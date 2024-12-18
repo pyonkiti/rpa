@@ -1,10 +1,8 @@
 # 開発環境での動作の仕方
-# WindowsでPowerShellを起動
+# WindowsでPowerShellを起動（Virual BoxのUbuntu環境では動作しない）
 # D:\vagrant\rpaに移動
-# ruby rpa_rakuraku.rb k 管理部提出データ出力１～3をCSV出力する場合
-# ruby rpa_rakuraku.rb s Access連携出力（請求）をCSV出力する場合
-# ruby rpa_rakuraku.rb a Access連携出力（請求/施設）をCSV出力する場合
-# ruby rpa_rakuraku.rb l 楽楽販売にログインするだけの場合
+# ruby rpa_seikyu.rb 引数    - 請求システムのRPA
+# ruby rpa_rakuraku.rb 引数  - 楽楽販売のRPA
 
 require 'selenium-webdriver'
 require 'logger'
@@ -62,11 +60,11 @@ class SESSIONS
         end
 
         # 初期処理
-        def proc_init
+        def proc_init(argv)
             begin
                 FileUtils.rm("./production.log", force: true)               # Logファイルの削除
                 $logger = Logger.new('production.log')                      # Logの設定
-                $logger.info("処理を開始しました。")
+                $logger.info("処理を開始しました。 引数: #{argv[0]}")
                 $has_local = YAML.load_file("./local.yaml")                 # YAMLファイル読み込み
                 return nil
             rescue => ex
@@ -305,7 +303,7 @@ ret, syori_kbn, driver = nil, nil, nil
 cat = catch(:goto_err) do
     
     # 初期処理
-    ret = SESSIONS.proc_init
+    ret = SESSIONS.proc_init(ARGV)
     throw :goto_err, ret if !ret.nil?
 
     # 引数の入力チェック
