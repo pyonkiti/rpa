@@ -226,10 +226,12 @@ class RAKURAKU
                     driver.find_element(id: "csv_downloadUtf8").click
                     sleep(0.5)
 
+                    # データ件数が多くなってダウンロード時間が長くなれば、sleepは長くすること（特に施設）
+                    minutes = (res[:tbl] = "sisetu" and res[:menu] = "Access連携出力") ? 12.0 : 4.5
+
                     # ダウンロード
-                    # データ件数が多くなってダウンロード時間が長くなれば、sleepは長くすること
                     driver.find_element(id: "csv_confirm_start").click
-                    sleep(4.5)
+                    sleep(minutes)
 
                     # ダウンロードファイル
                     driver.find_element(id: "csv_complete_link").click
