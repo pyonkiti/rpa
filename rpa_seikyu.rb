@@ -141,7 +141,7 @@ class RAKUREN_SCLOUD
 
             begin
                 # 幅を大きくする
-                driver.manage.window.resize_to(1200, 1020)
+                 driver.manage.window.resize_to(1200, 1060)
                 sleep(0.3)
 
                 # クラウド連携メニューを選択
@@ -184,8 +184,11 @@ class RAKUREN_SCLOUD
 
                     # ファイルを選択
                     driver.find_element(id: "#{id_tag_file}").send_keys csv_file
-                    sleep(1.0)
+                    sleep(3.0)
                     
+                    SESSIONS::syori_cnt += 1
+                    $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} ファイルを選択をクリックしました。")
+
                     # ファイル選択のID
                     id_tag_submit, minutes, msg = case syori_kbn
                         when "u" then ["tag_submit_seikyu", 1.0, "処理１"]                                                         # ユーザーの作成
@@ -209,7 +212,7 @@ class RAKUREN_SCLOUD
 
                     # ラジオボタンを選択
                     driver.find_element(id: "#{id_chk}").click
-                    sleep(0.5)
+                    sleep(1.0)
 
                     # 実行のsleep設定
                     minutes = case syori_kbn
@@ -265,7 +268,7 @@ class RAKUREN_NYUSHI
         
             begin
                 # 幅を大きくする
-                driver.manage.window.resize_to(1200, 1020)
+                driver.manage.window.resize_to(1200, 1060)
 
                 # 入金仕入メニューを選択
                 driver.find_element(xpath: "/html/body/div[1]/ul[1]/li[2]/a").click
@@ -363,7 +366,7 @@ class RAKUREN_SEIKYU
         def proc_main(driver)
             begin
                 # 幅を大きくする
-                driver.manage.window.resize_to(1200, 1020)
+                driver.manage.window.resize_to(1200, 1060)
 
                 # 請求月計算メニューを選択
                 driver.find_element(xpath: "/html/body/div[1]/ul[1]/li[3]/a").click
@@ -411,7 +414,7 @@ class RAKUREN_ASSENT
             begin
 
                 # 幅を大きくする
-                driver.manage.window.resize_to(1200, 1020)
+                driver.manage.window.resize_to(1200, 1060)
 
                 # 斡旋手数料メニューを選択
                 driver.find_element(xpath: "/html/body/div[1]/ul[1]/li[4]/a").click
@@ -467,7 +470,8 @@ cat = catch(:goto_err) do
     options = Selenium::WebDriver::Chrome::Options.new
     options.detach = true
     options.add_argument('--log-level=1')
-
+    options.add_argument('--force-device-scale-factor=0.9')
+    options.exclude_switches << 'enable-logging'
     driver = Selenium::WebDriver.for :chrome, options: options
 
     # ログイン処理
