@@ -426,23 +426,28 @@ class CSVFILES
             return msg
         end
 
-        # CSVファイルをJSONファイルに変換
+        # CSVファイルをJSONファイルに変換（未使用）
         def create_json(file)
             begin
                 return "「#{file}.json」が存在しません。" if !File.exist?("#{file}.json")
                 
-                header = ["ID","ユーザー","内容","現象／原因","処置","備考","連絡受付日","ユーザーキー"]
+                # CSVファイルのフィールド
+                #               0      1            2               3           4       5      6        7        8     9       10
+                header_moto = ["ID","ユーザー名","エンドユーザー","ユーザーキー","施設名","機場","内容","現象／原因","処置","備考","連絡受付日"]
+                #               0      1                            2                   3      4        5        6     7        8  
+                header      = ["ID","ユーザー",                  "ユーザーキー",        "機場","内容","現象／原因","処置","備考","連絡受付日"]
+
                 cnt = 0
-                
                 fil = File.open("#{file}.json", "a")
 
                 CSV.foreach("#{file}.csv") do |csv|
                 
                     cnt += 1
                     next if cnt == 1
-                    
-                    hash_line, user = {}, ""
-            
+
+                    hash_line, user, shisetu = {}, "", ""
+                    line = []
+
                     header.length.times do |idx|
                         case idx
                             when 0
@@ -450,15 +455,22 @@ class CSVFILES
                             when 1
                                 user = csv[idx].to_s
                             when 2
-                                # ユーザー名とエンドユーザーをユーザーの１つにまとめる
+                                # ユーザー名とエンドユーザーを１つ（ユーザー）にまとめる
                                 hash_line["#{header[idx-1]}"] = user == "" ? csv[idx] : user
-                            when 2..(header.length)
+                            when 3
                                 hash_line["#{header[idx-1]}"] = csv[idx] 
+                            when 4
+                                shisetu = csv[idx].to_s
+                            when 5
+                                # 施設名と機場を１つ（機場）にまとめる
+                                hash_line["#{header[idx-2]}"] = csv[idx] == "" ? shisetu : csv[idx]
+                            when 6..(header.length)
+                                hash_line["#{header[idx-2]}"] = csv[idx] 
                         end
                     end
 
                     fil.write("#{hash_line}\n")
-                    # break if cnt == 3
+                    # break if cnt == 5
                 end
 
                 fil.close
@@ -469,6 +481,72 @@ class CSVFILES
 
             rescue => ex
                 return "method - " + __method__.to_s + " : " + ex.message + ": JSONファイルの作成に失敗しました。"
+            end
+        end
+
+        # CSVファイルを編集
+        def create_csv(file)
+            begin
+                return "「#{file}.csv」が存在しません。" if !File.exist?("#{file}.csv")
+                
+                # CSVファイルのフィールド
+                #            0      1            2               3           4       5      6        7        8     9       10
+                csv_moto = ["ID","ユーザー名","エンドユーザー","ユーザーキー","施設名","機場","内容","現象／原因","処置","備考","連絡受付日"]
+                #            0      1                            2                   3      4        5        6     7        8  
+                header   = ["ID","ユーザー",                  "ユーザーキー",        "機場","内容","現象／原因","処置","備考","連絡受付日"]
+
+                cnt = 1
+                fil = File.open("#{file}_new.csv", "a")
+
+                CSV.foreach("#{file}.csv") do |csv|
+                    
+                    line, user, shisetu = [], "", ""
+
+                    if cnt == 1
+                        # ヘッダーの出力
+                        line = header
+                    else
+                        # 明細の出力
+                        csv.length.times do |idx|
+                            case idx
+                                when 0
+                                    line << csv[idx]
+                                when 1
+                                    user = csv[idx].to_s
+                                when 2
+                                    # ユーザー名とエンドユーザーを１つ（ユーザー）にまとめる
+                                    work = user == "" ? csv[idx] : user
+                                    line << work
+                                when 3
+                                    line << csv[idx] 
+                                when 4
+                                    shisetu = csv[idx].to_s
+                                when 5
+                                    # 施設名と機場を１つ（機場）にまとめる
+                                    work = csv[idx] == "" ? shisetu : csv[idx]
+                                    line << work
+                                when 6..9
+                                    csv[idx].gsub!(/(\r\n)+/, "。") if csv[idx].include?("\r\n")
+                                    line << csv[idx]
+                                when 10
+                                    line << csv[idx]
+                            end
+                        end
+                    end
+
+                    fil.write("#{line.map{|val| "\"#{val}\""}.join(",")}\n")
+                    cnt += 1
+                    # break if cnt == 5
+                end
+
+                fil.close
+
+                SESSIONS::syori_cnt += 1
+                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} 「#{File.basename(file)}.csv」→「#{File.basename(file)}_new.csv」に更新しました。")
+                return nil
+
+                rescue => ex
+                    return "method - " + __method__.to_s + " : " + ex.message + ": csvファイルの編集に失敗しました。"
             end
         end
     end
@@ -483,46 +561,29 @@ class COMMONCL
                 File.delete(file) if File.exist?(file)
                 fil = File.open(file, "w")
                 fil.close
+
+                SESSIONS::syori_cnt += 1
+                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} 「#{File.basename(file)}」の空ファイルを作成しました。")
+
                 return nil
             rescue => ex
                 return "method - " + __method__.to_s + " : " + ex.message + ": 「#{file}」の空ファイルの作成でエラーが発生しました。"
             end
         end
 
-        # JSONファイルをリネーム
-        def create_bkup(file)
+        # ファイルのリネーム
+        def change_file(filef, filet)
             begin
-                return "#{file}が存在しません。" if !File.exist?(file)
-                File.delete("#{file}.bkup")    if File.exist?("#{file}.bkup")
-                File.rename(file, "#{file}.bkup")
+                return "#{filef}が存在しません。" if !File.exist?(filef)
+                File.delete(filet) if File.exist?(filet)
+                File.rename(filef, filet)
 
                 SESSIONS::syori_cnt += 1
-                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} 「#{File.basename(file)}」に「.bkup」を付加してリネームしました。")
+                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} 「#{File.basename(filef)}」→「#{File.basename(filet)}」にリネームしました。")
 
                 return nil
             rescue => ex
-                return "method - " + __method__.to_s + " : " + ex.message + ": 「#{file}」の.bkupへのリネームでエラーが発生しました。"
-            end
-        end
-        
-        # 改行コードを。に変換
-        def change_kaigyo(file)
-            begin
-                filout = File.open("#{file}.bkup", "r")
-                filin  = File.open(file, "a")
-
-                filout.each_with_index do |row, idx|
-                    row.gsub!(/(\\r\\n)+/, "。") if row.include?("\\r\\n")
-                    filin.write(row)
-                    # break if idx == 1
-                end
-
-                filout.close
-                SESSIONS::syori_cnt += 1
-                $logger.info("#{SESSIONS::syori_cnt.to_s.rjust(2)} 「#{File.basename(file)}」で「\\r\\n → 。」に変換しました。")
-                return nil
-            rescue => ex
-                return "method - " + __method__.to_s + " : " + ex.message + ": 「#{file}」の改行コードの変換でエラーが発生しました。"
+                return "method - " + __method__.to_s + " : " + ex.message + ": #{File.basename(filef)}」→「#{File.basename(filet)}」へのリネームでエラーが発生しました。"
             end
         end
     end
@@ -580,28 +641,29 @@ cat = catch(:goto_err) do
                           {tbl_nm: "施設", tbl_id: "sisetu"}]
 
             syori_arry.each do |res|
-
+                
                 # 請求処理－各テーブル
                 ret = RAKURAKU.proc_table(driver, res[:tbl_id])
                 throw :goto_err, ret if !ret.nil?
-
+                
                 # 請求処理－各テーブル－各メニュー
                 ret = RAKURAKU.proc_syori(driver, res[:tbl_id], syori_kbn)
                 throw :goto_err, ret if !ret.nil?
-
+                
                 # CSVファイルのリネーム
                 ret = CSVFILES.change_csv(RAKURAKU::csv_arry)
                 throw :goto_err, ret if !ret.nil?
             end
 
         when "o"
+            
             # 障害管理
             ret = SHOUGAIK.proc_main(driver)
             throw :goto_err, ret if !ret.nil?
 
             # 処理ルーティン
             syori_arry = [{tbl_nm: "障害", tbl_id: "shogai"}]
-                         
+            
             syori_arry.each do |res|
                 
                 # 障害管理－各テーブル
@@ -619,23 +681,19 @@ cat = catch(:goto_err) do
                 file = "#{$has_local["csv_path"]}/障害・個別対応テーブル：障害テーブル一覧"
                 
                 # 空ファイルを作成
-                ret = COMMONCL.create_file("#{file}.json")
+                ret = COMMONCL.create_file("#{file}_new.csv")
                 throw :goto_err, ret if !ret.nil?
 
-                # CSVファイルをJSONファイルに変換
-                ret = CSVFILES.create_json(file)
+                # CSVファイルを編集
+                ret = CSVFILES.create_csv(file)
                 throw :goto_err, ret if !ret.nil?
 
-                # バックアップファイルにリネーム
-                ret = COMMONCL.create_bkup("#{file}.json")
+                # ファイルのリネーム
+                ret = COMMONCL.change_file("#{file}.csv", "#{file}.csv.bkup")
                 throw :goto_err, ret if !ret.nil?
 
-                # 空ファイルを作成
-                ret = COMMONCL.create_file("#{file}.json")
-                throw :goto_err, ret if !ret.nil?
-                
-                # 改行コードを変換
-                ret = COMMONCL.change_kaigyo("#{file}.json")
+                # ファイルのリネーム
+                ret = COMMONCL.change_file("#{file}_new.csv", "#{file}.csv")
                 throw :goto_err, ret if !ret.nil?
             end
     end
