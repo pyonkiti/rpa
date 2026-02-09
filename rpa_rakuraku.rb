@@ -228,7 +228,9 @@ class RAKURAKU
                     sleep(0.5)
                     
                     # UTF-8で出力する
-                    driver.find_element(id: "csv_downloadUtf8").click
+                    # 2026/02 ラクスによるHTMLの仕様変更対応
+                    # driver.find_element(id: "csv_downloadUtf8").click
+                    driver.find_element(css: "label[for='csv_downloadUtf8']").click
                     sleep(0.5)
                     
                     # データ件数が多くなってダウンロード時間が長くなれば、sleepは長くすること（特に施設）
@@ -360,9 +362,11 @@ class SHOUGAIK
                     sleep(0.5)
                     
                     # UTF-8で出力する
-                    driver.find_element(id: "csv_downloadUtf8").click
+                    # 2026/02 ラクスによるHTMLの仕様変更対応
+                    # driver.find_element(id: "csv_downloadUtf8").click
+                    driver.find_element(css: "label[for='csv_downloadUtf8']").click
                     sleep(0.5)
-
+                    
                     # ダウンロード
                     driver.find_element(id: "csv_confirm_start").click
                     sleep(2.5)
