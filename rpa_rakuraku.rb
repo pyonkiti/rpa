@@ -5,6 +5,7 @@
 # ruby rpa_rakuraku.rb 引数  - 楽楽販売のRPA
 
 require 'selenium-webdriver'
+require 'slack-ruby-client'
 require 'logger'
 require 'yaml'
 require 'csv'
@@ -30,12 +31,13 @@ class SESSIONS
                         # ヘルプ
                         when "h", "-h"
                             msg  = "\n"
-                            msg << "  a [-a]    Access連携出力（請求/施設）をCSVする処理を実行します \n"
-                            msg << "  s [-s]    Access連携出力（請求）をCSVする処理を実行します \n"
-                            msg << "  k [-k]    管理部提出データ1～3をCSV出力する処理を実行します \n"
-                            msg << "  o [-o]    障害テーブル（RAG連携）をCSV出力する処理を実行します \n"
-                            msg << "  l [-l]    ログインだけをおこないます \n"
-                            msg << "  h [-h]    ヘルプを表示します"
+                            msg << "  a [-a]   Access連携出力（請求/施設）をCSVする処理を実行します \n"
+                            msg << "  s [-s]   Access連携出力（請求）をCSVする処理を実行します \n"
+                            msg << "  k [-k]   管理部提出データ1～3をCSV出力する処理を実行します \n"
+                            msg << "  o [-o]   障害テーブル（RAG連携）をCSV出力する処理を実行します \n"
+                            msg << "  p [-p]   障害テーブル（RAG連携）をCSV出力する処理を実行した後、logをSlackに送信します \n"
+                            msg << "  l [-l]   ログインだけをおこないます \n"
+                            msg << "  h [-h]   ヘルプを表示します"
                         # Access連携出力（請求/施設）
                         when "a", "-a"
                             msg = argv[0][-1].to_s
@@ -50,6 +52,9 @@ class SESSIONS
                             msg = argv[0][-1].to_s
                         # 障害管理
                         when "o", "-o"
+                            msg = argv[0][-1].to_s
+                        # 障害管理 ＋ slack送信
+                        when "p", "-p"
                             msg = argv[0][-1].to_s
                         else
                             msg = "引数が正しく指定されていません。"
@@ -117,7 +122,7 @@ class SESSIONS
                     return "ログインID、または、パスワードに誤りがあります。"
                 end
 
-                $logger.info("#{@syori_cnt.to_s.rjust(2)} ログインができました。")
+                $logger.info("#{@syori_cnt.to_s.rjust(2)} 楽楽販売にログインできました。")
                 return nil
             rescue => ex
                 return "method - " + __method__.to_s + " : " + ex.message + ": 「ログイン処理」でエラーが発生しました。"
@@ -326,7 +331,7 @@ class SHOUGAIK
         def proc_syori(driver, tbl_id, syori_kbn)
             begin
                 menu_arry = case syori_kbn
-                    when "o"
+                    when "o", "p"
                         [{tbl: "shogai", menu: "障害テーブル（RAG連携）"}]
                 end
 
@@ -603,6 +608,55 @@ class TEST_DEV
     end
 end
 
+# Slackにlogを送信
+class SLACK_CL
+    class << self
+        # ログファイルの存在チェック
+        def check_logfile(file)
+            begin
+                if !File.exist?(file)
+                    return "#{file}が存在しません。"
+                else
+                    return "#{file}が0KBです。" if File.zero?(file)
+                end
+                return nil
+            rescue => ex
+                return "method - " + __method__.to_s + " : " + ex.message + ": 「#{File}」ファイルの存在チェックでエラーが発生しました。"
+            end
+        end
+
+        # Slackにメッセージを送信
+        def slack_send(file, linecnt)
+            begin
+                # トークンをセット
+                Slack.configure {|conf| conf.token = "#{$has_local["slack"]["ch1"]["token"]}"}
+
+                content = File.read(file)
+
+                # slackに送信するメッセージを省略
+                contents = case linecnt 
+                    when "short" then content.lines[1] + "以下、#{content.lines.size}件の行を省略・・・\n" + content.lines.last
+                    when "all"   then content
+                    else
+                end
+
+                contents.scan(/.{1,3000}/m).each do |msg|
+                if !msg.nil?
+                        client = Slack::Web::Client.new
+                        client.chat_postMessage(
+                            channel: "##{$has_local["slack"]["ch1"]["channel"]}", username: 'MessageBot', icon_emoji: ':interrobang:', text: msg
+                        )
+                    end
+                end
+                return nil
+            rescue => ex
+                puts ex.message
+                return "method - " + __method__.to_s + " : " + ex.message + ": 「#{File}」ファイルをslackで送信するときにエラーが発生しました。"
+            end
+        end
+    end
+end
+
 # ------------------------------------------------------------------------------
 # メイン処理
 # ------------------------------------------------------------------------------
@@ -659,7 +713,7 @@ cat = catch(:goto_err) do
                 throw :goto_err, ret if !ret.nil?
             end
 
-        when "o"
+        when "o", "p"
             
             # 障害管理
             ret = SHOUGAIK.proc_main(driver)
@@ -706,3 +760,20 @@ end
 
 # 終了処理
 SESSIONS.proc_end(driver, cat)
+
+# 共有Windows Serverで動作する場合の処理
+cat = catch(:goto_err) do
+
+    case syori_kbn
+        when "p"
+            # ログファイルの存在チェック
+            ret = SLACK_CL.check_logfile("./production.log")
+            throw :goto_err, ret if !ret.nil?
+            
+            # Slackにメッセージを送信
+            ret = SLACK_CL.slack_send("./production.log", "short")
+            
+            # ブラウザを終了
+            sleep(5.0); driver.quit
+    end
+end

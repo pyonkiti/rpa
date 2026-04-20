@@ -96,7 +96,8 @@ class SESSIONS
 
             begin
                 svr_cont = case $has_local["svr_cont"]
-                    when "dev" then "http://192.168.33.10:3000/"
+                  # when "dev" then "http://192.168.33.10:3000/"
+                    when "dev" then "localhost:3000"
                     when "pro" then "http://192.168.19.11:8000/"
                     else 
                         return "接続先のURLが正しく設定されていません。"
