@@ -83,10 +83,18 @@ class SESSIONS
         end
 
         # 終了処理
-        def proc_end(driver, cat)
+        def proc_end(driver, cat, syori_kbn)
             
             if cat.nil?
                 $logger.info("処理が正常終了しました。")
+
+                # 障害データ取得時
+                if syori_kbn == "p"
+
+                    # ブラウザを終了
+                    sleep(5.0)
+                    driver.quit if !driver.nil?
+                end
             else
                 $logger.error("#{cat}")
                 $logger.info("処理が異常終了しました。")
@@ -115,11 +123,14 @@ class SESSIONS
 
                 # ログインボタン
                 driver.find_element(id: 'jq-loginSubmit').click
-                sleep(0.3)
+                sleep(1.0)
                 
                 # ログイン判断
-                if driver.find_elements(class: 'fw-keyword').size >= 1
-                    return "ログインID、または、パスワードに誤りがあります。"
+                if driver.find_elements(class_name: 'fw-message-text-main').size >= 1
+                    msg = driver.find_element(class_name: 'fw-message-text-main').text
+                    if msg.include?("ログインに失敗")
+                        return "ログインID、または、パスワードに誤りがあります。"
+                    end
                 end
 
                 $logger.info("#{@syori_cnt.to_s.rjust(2)} 楽楽販売にログインできました。")
@@ -208,6 +219,8 @@ class RAKURAKU
                 menu_arry.each do |res|
                     
                     next if res[:tbl] != tbl_id
+
+                    sleep(0.3)
 
                     # 各処理メニューを選択
                     driver.find_element(xpath: "#{res[:xpath]}").click
@@ -347,12 +360,16 @@ class SHOUGAIK
 
                 menu_arry.each do |res|
                     
-                    # 一覧画面
-                    select = Selenium::WebDriver::Support::Select.new(driver.find_element(name: 'listFormatId'))
-                    sleep(0.3)
+                    # 非表示になった
+                    # select = Selenium::WebDriver::Support::Select.new(driver.find_element(name: 'listFormatId'))
+                    # select.select_by(:text, "#{res[:menu]}")
                     
                     # 一覧画面－障害テーブル（RAG連携）を選択
-                    select.select_by(:text, "#{res[:menu]}")
+                    driver.find_element(:css, "#listFormatId_chosen a.chosen-single").click
+                    sleep(2.0)
+
+                    option = driver.find_element(:xpath, "//div[@id='listFormatId_chosen']//ul[contains(@class,'chosen-results')]/li[contains(normalize-space(.), '#{res[:menu]}')]")
+                    option.click
                     sleep(3.0)
                     
                     SESSIONS::syori_cnt += 1
@@ -759,7 +776,7 @@ cat = catch(:goto_err) do
 end
 
 # 終了処理
-SESSIONS.proc_end(driver, cat)
+SESSIONS.proc_end(driver, cat, syori_kbn)
 
 # 共有Windows Serverで動作する場合の処理
 cat = catch(:goto_err) do
@@ -772,8 +789,5 @@ cat = catch(:goto_err) do
             
             # Slackにメッセージを送信
             ret = SLACK_CL.slack_send("./production.log", "short")
-            
-            # ブラウザを終了
-            sleep(5.0); driver.quit
     end
 end
